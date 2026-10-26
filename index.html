@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ciclo Otto p-V</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --surface: #ffffff; --surface-2: #eef1f5; --text: #1b1f24; --muted: #5d6673;
+    --grid: rgba(27,31,36,0.09); --axis: rgba(27,31,36,0.35); --accent: #2563eb;
+    --c-fired: #2563eb; --c-motor: #8a94a6; --c-otto: #d9480f; --c-vol: #2f9e44;
+    --ph-adm: rgba(47,158,68,0.07); --ph-comp: rgba(37,99,235,0.06); --ph-exp: rgba(217,72,15,0.06); --ph-esc: rgba(138,148,166,0.10);
+    /* cycle phases */
+    --f-adm: #2f9e44; --f-cruce: #ae3ec9; --f-comp: #1c7ed6; --f-comb: #f76707; --f-exp: #e03131; --f-blow: #f59f00; --f-esc: #868e96;
+    /* engine drawing */
+    --metal: #c5ccd6; --metal-2: #9aa4b2; --metal-edge: #6b7480; --spark: #fab005;
+    --radius: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111418; --surface: #1a1e24; --surface-2: #232830; --text: #e6e9ee; --muted: #9aa4b2;
+      --grid: rgba(230,233,238,0.08); --axis: rgba(230,233,238,0.35); --accent: #6ea8fe;
+      --c-fired: #6ea8fe; --c-motor: #7d8796; --c-otto: #ff8c5a; --c-vol: #69db7c;
+      --ph-adm: rgba(105,219,124,0.07); --ph-comp: rgba(110,168,254,0.07); --ph-exp: rgba(255,140,90,0.07); --ph-esc: rgba(125,135,150,0.10);
+      --f-adm: #51cf66; --f-cruce: #da77f2; --f-comp: #4dabf7; --f-comb: #ff922b; --f-exp: #ff6b6b; --f-blow: #fcc419; --f-esc: #adb5bd;
+      --metal: #59616d; --metal-2: #454c56; --metal-edge: #8a939f; --spark: #ffe066;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111418; --surface: #1a1e24; --surface-2: #232830; --text: #e6e9ee; --muted: #9aa4b2;
+    --grid: rgba(230,233,238,0.08); --axis: rgba(230,233,238,0.35); --accent: #6ea8fe;
+    --c-fired: #6ea8fe; --c-motor: #7d8796; --c-otto: #ff8c5a; --c-vol: #69db7c;
+    --ph-adm: rgba(105,219,124,0.07); --ph-comp: rgba(110,168,254,0.07); --ph-exp: rgba(255,140,90,0.07); --ph-esc: rgba(125,135,150,0.10);
+    --f-adm: #51cf66; --f-cruce: #da77f2; --f-comp: #4dabf7; --f-comb: #ff922b; --f-exp: #ff6b6b; --f-blow: #fcc419; --f-esc: #adb5bd;
+    --metal: #59616d; --metal-2: #454c56; --metal-edge: #8a939f; --spark: #ffe066;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1640px; margin: 0 auto; padding: 20px 16px 40px; }
+  header h1 { font-size: 22px; margin: 0 0 4px; }
+  header p { margin: 0; color: var(--muted); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 16px 0; }
+  .kpi { background: var(--surface); border-radius: var(--radius); padding: 10px 12px; }
+  .kpi .l { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .kpi .v { font: 600 17px/1.3 ui-monospace, "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .kpi .s { font-size: 12px; color: var(--muted); }
+  .main { display: grid; grid-template-columns: 280px minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+  .side { display: grid; grid-template-columns: 1fr; gap: 16px; min-width: 0; }
+  @media (max-width: 1300px) { .main { grid-template-columns: 280px minmax(0, 1fr); } .side { grid-column: 2; grid-template-columns: 1fr 1fr; } .side.single { grid-template-columns: 1fr; } }
+  @media (max-width: 900px) { .main { grid-template-columns: 1fr; } .side { grid-column: auto; grid-template-columns: 1fr; } }
+  .panel { background: var(--surface); border-radius: var(--radius); padding: 14px 16px; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 16px 0 10px; }
+  .panel h2:first-child { margin-top: 4px; }
+  .ctl { margin-bottom: 12px; }
+  .ctl .row { display: flex; justify-content: space-between; gap: 8px; }
+  .ctl label { font-weight: 500; }
+  .ctl output { font: 600 13px ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .ctl .hint { font-size: 12px; color: var(--muted); }
+  input[type=range] { width: 100%; accent-color: var(--accent); margin: 4px 0 0; }
+  .toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 24px;
+             background: var(--surface); border-radius: var(--radius); padding: 10px 16px; margin: 16px 0; }
+  .tb-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+  .tb-label { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+  button { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 8px; cursor: pointer;
+           border: 1px solid var(--grid); background: var(--surface-2); color: var(--text); }
+  button.on { background: var(--accent); color: #fff; border-color: transparent; }
+  .charts { display: grid; gap: 16px; min-width: 0; }
+  .chart-card { background: var(--surface); border-radius: var(--radius); padding: 12px 14px; min-width: 0; }
+  .chart-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+  .chart-head h3 { margin: 0; font-size: 15px; }
+  .seg { display: flex; gap: 4px; flex-wrap: wrap; }
+  canvas { width: 100%; display: block; touch-action: none; }
+  .cv-p { height: 300px; } .cv-v { height: 120px; } .cv-pv { height: 380px; }
+  .cv-engine { height: 460px; } .cv-valve { height: 380px; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .legend span::before { content: ""; display: inline-block; width: 14px; height: 3px; border-radius: 2px;
+                         background: var(--c); margin-right: 6px; vertical-align: middle; }
+  .legend .dash::before { background: repeating-linear-gradient(90deg, var(--c) 0 4px, transparent 4px 7px); }
+  .legend.chips span::before { width: 10px; height: 10px; border-radius: 3px; }
+  .hud { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 13px ui-monospace, Consolas, monospace;
+         background: var(--surface-2); border-radius: 8px; padding: 6px 12px; margin-top: 8px; }
+  .hud b { font-weight: 600; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; }
+  details { margin-top: 16px; }
+  details summary { cursor: pointer; font-weight: 600; }
+  details .body { color: var(--muted); margin-top: 8px; }
+  details code { font: 12.5px ui-monospace, Consolas, monospace; color: var(--text); }
+  /* mobile: charts first, then parameters, then engine; canvases let the page scroll vertically */
+  @media (max-width: 900px) {
+    .charts { order: 1; } .panel { order: 2; } .side { order: 3; }
+    canvas { touch-action: pan-y; }
+    .toolbar { padding: 10px 12px; }
+    .tb-group { width: 100%; }
+    .toggles { gap: 4px 14px; }
+    .toggles label { padding: 2px 0; }
+    button { padding: 7px 11px; }
+    input[type=range] { height: 28px; }
+  }
+  @media (max-width: 600px) {
+    .wrap { padding: 14px 16px 32px; }
+    header h1 { font-size: 19px; }
+    header p { font-size: 13px; }
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 12px 0; }
+    .kpi { padding: 8px 10px; }
+    .kpi .v { font-size: 15px; }
+    .toolbar { margin: 12px 0; }
+    .main { gap: 12px; } .charts, .side { gap: 12px; }
+    .chart-card { padding: 10px; }
+    .chart-head h3 { font-size: 14px; }
+    .cv-pv { height: 300px; } .cv-p { height: 240px; } .cv-v { height: 100px; }
+    .cv-engine { height: 400px; } .cv-valve { height: 340px; }
+    .hud { font-size: 12px; gap: 4px 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Ciclo Otto: diagramas p-V y p-θ</h1>
+    <p>Versión 1.2 · Modelo termodinámico de una zona con Wiebe, Woschni y distribución de válvulas. Motores de Combustión Interna para la Alta Competencia: Temas 1, 3, 4, 5 y 7.</p>
+  </header>
+
+  <div class="toolbar">
+    <div class="tb-group">
+      <span class="tb-label">Mostrar</span>
+      <div class="toggles">
+        <label><input type="checkbox" id="t-kpis" checked> Indicadores</label>
+        <label><input type="checkbox" id="t-engine" checked> Motor animado</label>
+        <label><input type="checkbox" id="t-valve" checked> Diagrama de distribución</label>
+        <label><input type="checkbox" id="t-motor" checked> Curva de arrastre (sin combustión)</label>
+        <label><input type="checkbox" id="t-otto" checked> Otto ideal</label>
+      </div>
+    </div>
+    <div class="tb-group">
+      <span class="tb-label">Escenarios</span>
+      <div class="presets">
+        <button data-preset="plena">Plena carga</button>
+        <button data-preset="parcial">Carga parcial</button>
+        <button data-preset="atrasado">Encendido atrasado</button>
+        <button data-preset="adelantado">Encendido adelantado</button>
+        <button data-preset="levas">Árbol de levas cruzado</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="main">
+    <aside class="panel">
+      <div id="controls"></div>
+    </aside>
+
+    <section class="charts">
+      <div class="chart-card">
+        <div class="chart-head">
+          <h3>Diagrama p-V</h3>
+          <div class="seg" id="seg-pv">
+            <button data-v="lin" class="on">Lineal</button>
+            <button data-v="log">Log-log</button>
+            <button data-v="bombeo">Lazo de bombeo</button>
+          </div>
+        </div>
+        <canvas id="cv-pv" class="cv-pv"></canvas>
+        <div class="legend">
+          <span style="--c: var(--c-fired)">Ciclo con combustión</span>
+          <span class="dash" style="--c: var(--c-motor)">Arrastre</span>
+          <span class="dash" style="--c: var(--c-otto)">Otto ideal (mismo calor)</span>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-head">
+          <h3>Presión y volumen vs. ángulo de cigüeñal</h3>
+          <div class="seg" id="seg-pt">
+            <button data-v="full" class="on">Ciclo completo</button>
+            <button data-v="zoom">Zoom combustión</button>
+            <button data-v="bombeo">Bombeo (0–3 bar)</button>
+          </div>
+        </div>
+        <canvas id="cv-p" class="cv-p"></canvas>
+        <canvas id="cv-v" class="cv-v"></canvas>
+        <div class="hud" id="hud"></div>
+      </div>
+    </section>
+
+    <section class="side" id="duo">
+      <div class="chart-card" id="card-engine">
+        <div class="chart-head">
+          <h3>Motor</h3>
+          <div class="seg" id="anim">
+            <button id="b-play">▶ Animar</button>
+            <button data-speed="60">Lento</button>
+            <button data-speed="200" class="on">Normal</button>
+            <button data-speed="600">Rápido</button>
+          </div>
+        </div>
+        <canvas id="cv-engine" class="cv-engine"></canvas>
+      </div>
+      <div class="chart-card" id="card-valve">
+        <div class="chart-head"><h3>Diagrama de distribución (720°)</h3></div>
+        <canvas id="cv-valve" class="cv-valve"></canvas>
+        <div class="note">Vuelta interior: admisión y compresión · Vuelta exterior: expansión y escape. Pasá el mouse o el dedo por la espiral para recorrer el ciclo.</div>
+        <div class="legend chips" id="phase-legend"></div>
+      </div>
+    </section>
+  </div>
+
+  <details>
+    <summary>Modelo y supuestos</summary>
+    <div class="body">
+      <p><b>Cinemática biela-manivela:</b> <code>V(θ) = Vc + Vd/2 · [1 − cos θ + (1/λ)(1 − √(1 − λ² sen² θ))]</code>, con λ = R/L. θ = 0° es el PMS de combustión; el ciclo va de −360° a +360°.</p>
+      <p><b>Distribución:</b> la admisión abre AAA grados antes del PMS de cruce y cierra RCA grados después del PMI; el escape abre AAE grados antes del PMI y cierra RCE grados después del PMS de cruce. La alzada de cada válvula sigue un perfil <code>sen²</code> entre apertura y cierre.</p>
+      <p><b>Ciclo cerrado (del cierre de admisión a la apertura de escape):</b> primer principio en una zona, <code>dp/dθ = −γ·(p/V)·dV/dθ + (γ−1)/V · (dQ<sub>c</sub>/dθ − dQ<sub>w</sub>/dθ)</code>, integrado con Runge-Kutta 2 cada 0,1°.</p>
+      <p><b>Masa atrapada:</b> gas ideal a la presión de admisión y 320 K en el volumen del cilindro <b>al cerrar la admisión</b>. Por eso un RCA grande reduce el llenado (efecto Miller). El modelo no tiene efectos dinámicos de onda ni inercia (efecto RAM), que en un motor real recuperan ese llenado a altas rpm.</p>
+      <p><b>Liberación de calor de Wiebe:</b> <code>x<sub>b</sub>(θ) = 1 − exp[−a·((θ − θ<sub>s</sub>)/Δθ)<sup>m+1</sup>]</code>, con a = 5 (99,3 % quemado al final de Δθ). El calor liberado es <code>Q = m<sub>f</sub> · PCI · 0,95</code>, con PCI = 44 MJ/kg y AFR estequiométrico 14,7. Con mezcla rica, la energía liberada queda limitada por el aire disponible (con una pequeña ganancia hasta φ ≈ 1,1).</p>
+      <p><b>Transferencia de calor (Woschni):</b> <code>dQ<sub>w</sub>/dθ = h·A·(T − T<sub>w</sub>)/(6N)</code>, con <code>h = 3,26·B<sup>−0,2</sup>·p<sup>0,8</sup>·T<sup>−0,55</sup>·w<sup>0,8</sup></code> y <code>w = 2,28·S̄<sub>p</sub> + 3,24·10<sup>−3</sup>·(V<sub>d</sub>·T<sub>r</sub>/(p<sub>r</sub>·V<sub>r</sub>))·(p − p<sub>arrastre</sub>)</code>. El segundo término actúa desde el encendido. T<sub>w</sub> = 450 K.</p>
+      <p><b>Escape espontáneo:</b> desde la apertura de escape, la presión cae exponencialmente hacia p<sub>esc</sub> = 1,05 bar, con un 98 % de la caída en ≈ 3 ms. Como es un tiempo, a más rpm ocupa más grados de cigüeñal: si el escape abre tarde a alto régimen, el pistón empuja contra gases a presión y aumenta el trabajo de bombeo, y por eso el AAE óptimo crece con las rpm. <b>Cruce de válvulas:</b> la presión pasa linealmente de p<sub>esc</sub> a la presión de admisión.</p>
+      <p><b>Otto ideal:</b> compresión y expansión isentrópicas desde el PMI, con el mismo γ, y aporte de calor a volumen constante en el PMS con el mismo calor (sin pérdidas). Rendimiento <code>η = 1 − r<sub>c</sub><sup>1−γ</sup></code>.</p>
+      <p><b>Simplificaciones:</b> γ constante, sin efectos dinámicos en admisión y escape (por eso un árbol de levas cruzado solo pierde llenado), sin gases residuales ni fricción: todos los valores son indicados, no al freno. Sirve para ver tendencias, no para predecir valores de un motor real.</p>
+      <p><b>Geometría fija:</b> 4 cilindros de 86 × 86 mm (≈ 2,0 L), λ = 0,30.</p>
+    </div>
+  </details>
+</div>
+
+<script>
+(() => {
+  // Engine geometry (fixed)
+  const BORE = 0.086, STROKE = 0.086, LAMBDA = 0.30, NCYL = 4;
+  const VD = Math.PI / 4 * BORE * BORE * STROKE;   // m³ per cylinder
+  const R_AIR = 287, T_IN = 320, T_WALL = 450, LHV = 44e6, AFR_ST = 14.7, P_EXH = 1.05e5, WIEBE_A = 5, BLOWDOWN_MS = 3;
+
+  const CONTROLS = [
+    { sec: 'Combustión y carga' },
+    { id: 'rc',    label: 'Relación de compresión', min: 6, max: 14, step: 0.1, val: 10.5, fmt: v => v.toFixed(1) + ' : 1' },
+    { id: 'ign',   label: 'Avance de encendido', min: 0, max: 45, step: 0.5, val: 17, fmt: v => v.toFixed(1) + '° APMS',
+      hint: 'Inicio de la combustión antes del PMS' },
+    { id: 'dur',   label: 'Duración de la combustión', min: 20, max: 90, step: 1, val: 50, fmt: v => v.toFixed(0) + '°' },
+    { id: 'm',     label: 'Factor de forma de Wiebe (m)', min: 0.5, max: 4, step: 0.1, val: 2, fmt: v => v.toFixed(1) },
+    { id: 'pin',   label: 'Presión de admisión', min: 0.25, max: 1.6, step: 0.01, val: 1.0, fmt: v => v.toFixed(2) + ' bar',
+      hint: '< 1 bar: mariposa parcial · > 1 bar: sobrealimentado' },
+    { id: 'phi',   label: 'Riqueza φ', min: 0.7, max: 1.3, step: 0.01, val: 1.0, fmt: v => v.toFixed(2) + (v > 1.005 ? ' (rica)' : v < 0.995 ? ' (pobre)' : ' (estequiométrica)') },
+    { id: 'htm',   label: 'Transferencia de calor (× Woschni)', min: 0, max: 2, step: 0.05, val: 1, fmt: v => v.toFixed(2) + ' ×',
+      hint: '0 = adiabático · 1 = correlación de Woschni' },
+    { id: 'gamma', label: 'Exponente γ', min: 1.25, max: 1.40, step: 0.005, val: 1.32, fmt: v => v.toFixed(3) },
+    { id: 'rpm',   label: 'Régimen (para potencia)', min: 1000, max: 9000, step: 100, val: 6500, fmt: v => v.toFixed(0) + ' rpm' },
+    { sec: 'Distribución' },
+    { id: 'aaa', label: 'AAA: adelanto apertura admisión', min: 0, max: 45, step: 1, val: 12, fmt: v => v.toFixed(0) + '° APMS' },
+    { id: 'rca', label: 'RCA: retraso cierre admisión', min: 0, max: 80, step: 1, val: 40, fmt: v => v.toFixed(0) + '° DPMI' },
+    { id: 'aae', label: 'AAE: adelanto apertura escape', min: 0, max: 80, step: 1, val: 45, fmt: v => v.toFixed(0) + '° APMI' },
+    { id: 'rce', label: 'RCE: retraso cierre escape', min: 0, max: 45, step: 1, val: 12, fmt: v => v.toFixed(0) + '° DPMS' },
+  ];
+  const INPUTS = CONTROLS.filter(c => c.id);
+  const PRESETS = {
+    plena:      { pin: 1.0, ign: 17, dur: 50, phi: 1.0, aaa: 12, rca: 40, aae: 45, rce: 12 },
+    parcial:    { pin: 0.4, ign: 25, dur: 60, phi: 1.0, aaa: 12, rca: 40, aae: 45, rce: 12 },
+    atrasado:   { pin: 1.0, ign: 2,  dur: 50, phi: 1.0 },
+    adelantado: { pin: 1.0, ign: 38, dur: 50, phi: 1.0 },
+    levas:      { pin: 1.0, ign: 17, dur: 50, phi: 1.0, aaa: 35, rca: 70, aae: 70, rce: 35 },
+  };
+  const PHASES = [
+    ['Admisión', '--f-adm'], ['Cruce de válvulas', '--f-cruce'], ['Compresión', '--f-comp'], ['Combustión', '--f-comb'],
+    ['Expansión', '--f-exp'], ['Escape espontáneo', '--f-blow'], ['Escape', '--f-esc'],
+  ];
+
+  const S = {}; INPUTS.forEach(c => S[c.id] = c.val);
+  const view = { pv: 'lin', pt: 'full', motor: true, otto: true, engine: true, valve: true,
+                 hover: null, playing: false, speed: 200 };
+
+  // ---------- model ----------
+  const rad = d => d * Math.PI / 180;
+  function vol(th, Vc) {
+    const r = rad(th), s = Math.sin(r);
+    return Vc + VD / 2 * (1 - Math.cos(r) + (1 / LAMBDA) * (1 - Math.sqrt(1 - LAMBDA * LAMBDA * s * s)));
+  }
+  function dVdth(th) { // per degree
+    const r = rad(th), s = Math.sin(r), c = Math.cos(r);
+    return VD / 2 * (s + LAMBDA * s * c / Math.sqrt(1 - LAMBDA * LAMBDA * s * s)) * Math.PI / 180;
+  }
+  function wiebeX(th, ths, dur, m) {
+    if (th <= ths) return 0;
+    const x = Math.min((th - ths) / dur, 1.5);
+    return 1 - Math.exp(-WIEBE_A * Math.pow(x, m + 1));
+  }
+  function dXdth(th, ths, dur, m) {
+    if (th <= ths) return 0;
+    const x = (th - ths) / dur;
+    return WIEBE_A * (m + 1) / dur * Math.pow(x, m) * Math.exp(-WIEBE_A * Math.pow(x, m + 1));
+  }
+  // valve lift 0..1 with a sin² profile; the open interval may wrap around ±360°
+  function lift(th, open, close) {
+    for (const t of [th, th - 720, th + 720]) if (t >= open && t <= close) return Math.pow(Math.sin(Math.PI * (t - open) / (close - open)), 2);
+    return 0;
+  }
+
+  function simulate() {
+    const rc = S.rc, g = S.gamma, pin = S.pin * 1e5;
+    const Vc = VD / (rc - 1), Vbdc = Vc + VD;
+    // valve events in cycle angle (0 = firing TDC)
+    const IVO = -360 - S.aaa, IVC = -180 + S.rca, EVO = 180 - S.aae, EVC = 360 + S.rce;
+    const Vivc = vol(IVC, Vc);
+    const mAir = pin * Vivc / (R_AIR * T_IN);
+    const mf = mAir * S.phi / AFR_ST;
+    const Qfuel = mf * LHV;                                    // fuel energy supplied
+    // Released energy: lean burns all the fuel; rich is limited by the available air,
+    // with a small gain up to φ ≈ 1.1 (empirical fit to the usual power curve).
+    const d = S.phi - 1;
+    const Qin = S.phi <= 1 ? Qfuel * 0.95 : (mAir / AFR_ST) * LHV * 0.95 * (1 + 0.5 * d - 2.5 * d * d);
+    const ths = -S.ign, dur = S.dur, m = S.m;
+    const mTot = mAir + mf, Sp = 2 * STROKE * S.rpm / 60, degPerSec = 6 * S.rpm;
+    // Wall heat loss per degree, Woschni correlation (p in kPa, w in m/s, T in K)
+    const wallLoss = (th, p, pmot) => {
+      if (S.htm === 0) return 0;
+      const V = vol(th, Vc), T = p * V / (mTot * R_AIR);
+      const w = 2.28 * Sp + (th >= ths ? 3.24e-3 * VD * T_IN / (pin * Vivc) * Math.max(p - pmot, 0) : 0);
+      const h = 3.26 * Math.pow(BORE, -0.2) * Math.pow(p / 1000, 0.8) * Math.pow(T, -0.55) * Math.pow(w, 0.8);
+      const A = Math.PI * BORE * BORE / 2 + 4 * V / BORE;
+      return S.htm * h * A * (T - T_WALL) / degPerSec;
+    };
+    const phaseAt = th => {
+      const overlap = S.aaa + S.rce > 0 && (th >= IVO + 720 || th <= EVC - 720);
+      if (overlap) return 'Cruce de válvulas';
+      if (th < IVC) return 'Admisión';
+      if (th < EVO) return th < ths ? 'Compresión' : (wiebeX(th, ths, dur, m) < 0.99 ? 'Combustión' : 'Expansión');
+      return th < 180 ? 'Escape espontáneo' : 'Escape';
+    };
+    // pressure while some valve is open (overlap ramps linearly from exhaust to intake pressure)
+    const ovl = S.aaa + S.rce;
+    const openP = (th, pEvo) => {
+      if (ovl > 0 && th >= IVO + 720) return P_EXH + (pin - P_EXH) * (th - IVO - 720) / ovl;
+      if (ovl > 0 && th <= EVC - 720) return P_EXH + (pin - P_EXH) * (th - IVO + 0) / ovl;
+      if (th < IVC) return pin;
+      // blowdown lasts a roughly fixed time (~3 ms), so it spans more crank degrees at high rpm
+      const k = Math.log(50) / (BLOWDOWN_MS * 6 * S.rpm / 1000);
+      return P_EXH + (pEvo - P_EXH) * Math.exp(-k * (th - EVO));
+    };
+
+    const pts = [];
+    for (let th = -360; th < IVC; th += 1) { const p0 = openP(th); pts.push({ th, V: vol(th, Vc), p: p0, pm: p0, xb: 0 }); }
+    const f = (th, p, pmot, withQ) => {
+      const V = vol(th, Vc);
+      const dQ = (withQ ? Qin * dXdth(th, ths, dur, m) : 0) - wallLoss(th, p, pmot);
+      return -g * p / V * dVdth(th) + (g - 1) / V * dQ;
+    };
+    const H = 0.1, N = Math.round((EVO - IVC) / H);
+    let p = pin, pm = pin, Qw = 0;
+    for (let i = 0; i <= N; i++) {
+      const th = IVC + i * H;
+      if (i % 5 === 0 || (th > ths - 5 && th < ths + dur + 5) || i === N)
+        pts.push({ th, V: vol(th, Vc), p, pm, xb: wiebeX(th, ths, dur, m) });
+      if (i === N) break;
+      const j1 = f(th, pm, pm, false), j2 = f(th + H / 2, pm + H / 2 * j1, pm + H / 2 * j1, false);
+      const pmMid = pm + H / 2 * j1;
+      const k1 = f(th, p, pm, true), k2 = f(th + H / 2, p + H / 2 * k1, pmMid, true);
+      Qw += H * wallLoss(th + H / 2, p + H / 2 * k1, pmMid);
+      p += H * k2; pm += H * j2;
+    }
+    const pEvo = p, pmEvo = pm;
+    for (let th = Math.ceil(EVO); th <= 360; th += 1) {
+      if (th <= EVO) continue;
+      const blow = openP(th, pEvo), blowM = openP(th, pmEvo);
+      pts.push({ th, V: vol(th, Vc), p: blow, pm: blowM, xb: 1 });
+    }
+    pts.forEach(q => q.ph = phaseAt(q.th));
+
+    // work: gross over compression + expansion strokes, the rest is pumping
+    let Wtot = 0, Wg = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], dW = 0.5 * (a.p + b.p) * (b.V - a.V);
+      Wtot += dW;
+      if (a.th >= -180 && b.th <= 180) Wg += dW;
+    }
+    const Wp = Wtot - Wg;
+    let pmax = 0, thmax = 0;
+    pts.forEach(q => { if (q.p > pmax) { pmax = q.p; thmax = q.th; } });
+    const mfb50 = ths + dur * Math.pow(Math.LN2 / WIEBE_A, 1 / (m + 1));
+
+    // ideal Otto with same fuel energy, no losses
+    const p2 = pin * Math.pow(rc, g);
+    const p3 = p2 + (g - 1) * Qin / Vc;
+    const ottoAt = th => {
+      const V = vol(th, Vc);
+      if (th < -180 || th > 180) return null;
+      return th <= 0 ? pin * Math.pow(Vbdc / V, g) : p3 * Math.pow(Vc / V, g);
+    };
+    const etaOtto = 1 - Math.pow(rc, 1 - g);
+
+    const imepG = Wg / VD, imepN = Wtot / VD, pmep = -Wp / VD;
+    const powerW = Wtot * NCYL * S.rpm / 120;
+    return { pts, Vc, Vbdc, pin, Qin, Wg, Wp, imepG, imepN, pmep, pmax, thmax, mfb50,
+             etaInd: Wg / Qfuel, etaNet: Wtot / Qfuel, wallFrac: Qw / Qfuel, mAir, fill: Vivc / Vbdc,
+             etaOtto, ottoAt, p2, p3, powerW, torque: powerW / (S.rpm * 2 * Math.PI / 60),
+             IVO, IVC, EVO, EVC, ths, dur, phaseAt,
+             liftI: th => lift(th, IVO, IVC), liftE: th => lift(th, EVO, EVC),
+             xbAt: th => (th < IVC || th > 360) ? 0 : wiebeX(th, ths, dur, m) };
+  }
+
+  // ---------- drawing helpers ----------
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const phaseColor = ph => css((PHASES.find(x => x[0] === ph) || PHASES[0])[1]);
+  function withAlpha(c, a) {
+    c = c.trim();
+    if (c[0] === '#') { let h = c.slice(1); if (h.length === 3) h = [...h].map(x => x + x).join('');
+      return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`; }
+    return c;
+  }
+  function niceTicks(lo, hi, n) {
+    const span = hi - lo, raw = span / n, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map(k => k * mag).find(s => span / s <= n) || 10 * mag;
+    const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10));
+    return out;
+  }
+  function logTicks(lo, hi) {
+    const out = [];
+    for (let e = Math.floor(Math.log10(lo)); e <= Math.ceil(Math.log10(hi)); e++)
+      [1, 2, 5].forEach(k => { const v = k * Math.pow(10, e); if (v >= lo * 0.999 && v <= hi * 1.001) out.push(v); });
+    return out;
+  }
+  function setupCanvas(cv) {
+    const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+    return { ctx, w, h };
+  }
+  // generic XY plot; returns mapping for hover
+  function plot(cv, o) {
+    const { ctx, w, h } = setupCanvas(cv);
+    const pad = { l: 52, r: 14, t: 12, b: o.xLabel ? 34 : 14 };
+    const X0 = pad.l, X1 = w - pad.r, Y0 = h - pad.b, Y1 = pad.t;
+    const tx = o.xLog ? v => Math.log10(v) : v => v, ty = o.yLog ? v => Math.log10(v) : v => v;
+    const sx = v => X0 + (tx(v) - tx(o.x[0])) / (tx(o.x[1]) - tx(o.x[0])) * (X1 - X0);
+    const sy = v => Y0 - (ty(v) - ty(o.y[0])) / (ty(o.y[1]) - ty(o.y[0])) * (Y0 - Y1);
+    ctx.font = '11px ui-monospace, Consolas, monospace';
+    (o.bands || []).forEach(b => {
+      const a = Math.max(sx(b.from), X0), z = Math.min(sx(b.to), X1);
+      if (z <= a) return;
+      ctx.fillStyle = b.color; ctx.fillRect(a, Y1, z - a, Y0 - Y1);
+      ctx.fillStyle = css('--muted'); ctx.textAlign = 'center';
+      if (z - a > 60) ctx.fillText(b.label, (a + z) / 2, Y1 + 12);
+    });
+    ctx.strokeStyle = css('--grid'); ctx.fillStyle = css('--muted'); ctx.lineWidth = 1;
+    const xt = o.xTicks || (o.xLog ? logTicks(o.x[0], o.x[1]) : niceTicks(o.x[0], o.x[1], o.xN || 8));
+    const yt = o.yLog ? logTicks(o.y[0], o.y[1]) : niceTicks(o.y[0], o.y[1], o.yN || 5);
+    ctx.textAlign = 'center';
+    xt.forEach(v => { const X = sx(v); ctx.beginPath(); ctx.moveTo(X, Y1); ctx.lineTo(X, Y0); ctx.stroke();
+                      if (o.xLabel) ctx.fillText(o.xFmt ? o.xFmt(v) : v, X, Y0 + 14); });
+    ctx.textAlign = 'right';
+    yt.forEach(v => { const Y = sy(v); ctx.beginPath(); ctx.moveTo(X0, Y); ctx.lineTo(X1, Y); ctx.stroke();
+                      ctx.fillText(o.yFmt ? o.yFmt(v) : v, X0 - 6, Y + 4); });
+    ctx.strokeStyle = css('--axis'); ctx.beginPath(); ctx.moveTo(X0, Y1); ctx.lineTo(X0, Y0); ctx.lineTo(X1, Y0); ctx.stroke();
+    ctx.fillStyle = css('--muted'); ctx.font = '12px system-ui, sans-serif';
+    if (o.xLabel) { ctx.textAlign = 'center'; ctx.fillText(o.xLabel, (X0 + X1) / 2, h - 4); }
+    ctx.save(); ctx.translate(12, (Y0 + Y1) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.fillText(o.yLabel, 0, 0); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(X0, Y1, X1 - X0, Y0 - Y1); ctx.clip();
+    o.series.forEach(s => {
+      ctx.strokeStyle = s.color; ctx.lineWidth = s.width || 2; ctx.setLineDash(s.dash || []); ctx.lineJoin = 'round';
+      ctx.beginPath(); let started = false;
+      s.pts.forEach(q => {
+        if (q == null || q.y == null || (o.yLog && q.y <= 0)) { started = false; return; }
+        const X = sx(q.x), Y = sy(q.y);
+        if (!started) { ctx.moveTo(X, Y); started = true; } else ctx.lineTo(X, Y);
+      });
+      ctx.stroke();
+    });
+    ctx.setLineDash([]);
+    (o.vlines || []).forEach(v => { const X = sx(v.x); ctx.strokeStyle = v.color; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(X, Y1); ctx.lineTo(X, Y0); ctx.stroke(); ctx.setLineDash([]); });
+    (o.dots || []).forEach(d => { ctx.fillStyle = d.color; ctx.beginPath(); ctx.arc(sx(d.x), sy(d.y), 4.5, 0, 2 * Math.PI); ctx.fill();
+      ctx.strokeStyle = css('--surface'); ctx.lineWidth = 1.5; ctx.stroke(); });
+    ctx.restore();
+    return { sx, sy, X0, X1, Y0, Y1,
+             invX: X => { const t = tx(o.x[0]) + (X - X0) / (X1 - X0) * (tx(o.x[1]) - tx(o.x[0])); return o.xLog ? Math.pow(10, t) : t; } };
+  }
+
+  // ---------- engine cross-section ----------
+  function drawEngine(cv, th, q) {
+    const { ctx, w, h } = setupCanvas(cv);
+    const B = BORE * 1000, Smm = STROKE * 1000, Rk = Smm / 2, L = Rk / LAMBDA;
+    const hc = R.Vc * 1e9 / (Math.PI / 4 * B * B);              // clearance height [mm]
+    const pinOff = 32, skirt = 58, wall = 9;
+    const phi = rad(((th % 360) + 360) % 360);                   // crank angle 0 = TDC
+    const s = Math.sin(phi), xp = Rk * (1 - Math.cos(phi)) + L * (1 - Math.sqrt(1 - LAMBDA * LAMBDA * s * s));
+    const crown = hc + xp, pinY = crown + pinOff, yc = hc + pinOff + L + Rk;
+    const k = Math.min(w / 250, (h - 8) / (yc + Rk + 30 + 92));
+    const X0 = w * 0.56, Y0 = 8 + 92 * k;
+    const X = x => X0 + x * k, Y = y => Y0 + y * k;
+    const metal = css('--metal'), metal2 = css('--metal-2'), edge = css('--metal-edge'), txt = css('--text'), muted = css('--muted');
+    const ph = q.ph, col = phaseColor(ph);
+    const li = R.liftI(th), le = R.liftE(th), LMAX = 9;
+    const xbNow = R.xbAt(th);
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+
+    // gas colour: fresh mixture, compressed, burning or burned; intensity follows pressure
+    const pRel = Math.min(1, Math.log(q.p / 0.8e5) / Math.log(R.pmax / 0.8e5));
+    const fresh = withAlpha(css('--f-adm'), 0.25), burned = withAlpha(css('--f-esc'), 0.45);
+    let gasFill;
+    if (ph === 'Admisión') gasFill = fresh;
+    else if (ph === 'Compresión') gasFill = withAlpha(css('--f-comp'), 0.2 + 0.45 * pRel);
+    else if (ph === 'Combustión') gasFill = withAlpha(css('--f-comp'), 0.2 + 0.45 * pRel);
+    else if (ph === 'Expansión') gasFill = withAlpha(css('--f-exp'), 0.25 + 0.5 * pRel);
+    else if (ph === 'Cruce de válvulas') gasFill = withAlpha(css('--f-cruce'), 0.25);
+    else gasFill = burned;
+
+    // liner / block
+    ctx.fillStyle = metal2;
+    ctx.fillRect(X(-B / 2 - wall), Y(0), wall * k, (hc + Smm + skirt + 6) * k);
+    ctx.fillRect(X(B / 2), Y(0), wall * k, (hc + Smm + skirt + 6) * k);
+    // gas
+    ctx.fillStyle = gasFill; ctx.fillRect(X(-B / 2), Y(0), B * k, crown * k);
+    if (ph === 'Combustión' || (ph === 'Expansión' && xbNow < 0.999)) {
+      ctx.save(); ctx.beginPath(); ctx.rect(X(-B / 2), Y(0), B * k, crown * k); ctx.clip();
+      const rMax = Math.hypot(B / 2, crown) * 1.05, rb = Math.sqrt(xbNow) * rMax;
+      const gr = ctx.createRadialGradient(X(0), Y(2), 0, X(0), Y(2), Math.max(rb * k, 1));
+      gr.addColorStop(0, withAlpha(css('--spark'), 0.9)); gr.addColorStop(0.55, withAlpha(css('--f-comb'), 0.85));
+      gr.addColorStop(1, withAlpha(css('--f-exp'), 0.75));
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(X(0), Y(2), rb * k, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    // cylinder head with ports
+    const headTop = -52, portW = 20;
+    ctx.fillStyle = metal; ctx.fillRect(X(-B / 2 - 38), Y(headTop), (B + 76) * k, -headTop * k);
+    const port = (sign, gas) => {
+      ctx.strokeStyle = gas; ctx.lineWidth = portW * k;
+      ctx.beginPath(); ctx.moveTo(X(sign * B / 4), Y(-3)); ctx.quadraticCurveTo(X(sign * B / 4), Y(-28), X(sign * (B / 2 + 38)), Y(-34)); ctx.stroke();
+    };
+    port(-1, li > 0.02 ? withAlpha(css('--f-adm'), 0.55) : withAlpha(css('--f-adm'), 0.22));
+    port(1, le > 0.02 ? withAlpha(css('--f-esc'), 0.7) : withAlpha(css('--f-esc'), 0.3));
+    ctx.fillStyle = muted; ctx.font = '11px system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Admisión', X(-B / 2 - 14), Y(headTop - 6)); ctx.fillText('Escape', X(B / 2 + 14), Y(headTop - 6));
+
+    // valves (stem, head, spring)
+    const valve = (sign, lv) => {
+      const xv = sign * B / 4, dy = lv * LMAX, dh = 13;
+      ctx.strokeStyle = edge; ctx.lineWidth = 3.4 * k;
+      ctx.beginPath(); ctx.moveTo(X(xv), Y(dy - 3)); ctx.lineTo(X(xv), Y(headTop - 26 + dy)); ctx.stroke();
+      ctx.fillStyle = metal2; ctx.strokeStyle = edge; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(X(xv - dh), Y(dy)); ctx.lineTo(X(xv + dh), Y(dy)); ctx.lineTo(X(xv + 4), Y(dy - 6));
+      ctx.lineTo(X(xv - 4), Y(dy - 6)); ctx.closePath(); ctx.fill(); ctx.stroke();
+      // spring between head top and retainer
+      const top = headTop - 26 + dy, bot = headTop, turns = 6;
+      ctx.strokeStyle = muted; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(X(xv - 8), Y(bot));
+      for (let i = 1; i <= turns * 2; i++) ctx.lineTo(X(xv + (i % 2 ? 8 : -8)), Y(bot + (top - bot) * i / (turns * 2)));
+      ctx.stroke();
+      ctx.fillStyle = edge; ctx.fillRect(X(xv - 10), Y(top - 2), 20 * k, 3 * k);
+    };
+    valve(-1, li); valve(1, le);
+    // flow arrows through open valves
+    const arrows = (sign, lv, inward, color) => {
+      if (lv < 0.08) return;
+      ctx.strokeStyle = withAlpha(color, 0.35 + 0.6 * lv); ctx.lineWidth = 2;
+      const xv = sign * B / 4;
+      for (const off of [-1, 1]) {
+        const x0 = xv + off * 15, y0 = lv * LMAX + 4, y1 = y0 + 9 + 10 * lv;
+        const [a, b] = inward ? [y0, y1] : [y1, y0];
+        ctx.beginPath(); ctx.moveTo(X(x0), Y(a)); ctx.lineTo(X(x0 + off * 3), Y(b)); ctx.stroke();
+        const ang = Math.atan2(b - a, off * 3), ah = 4;
+        ctx.beginPath(); ctx.moveTo(X(x0 + off * 3), Y(b));
+        ctx.lineTo(X(x0 + off * 3 - ah * Math.cos(ang - 0.5)), Y(b - ah * Math.sin(ang - 0.5)));
+        ctx.moveTo(X(x0 + off * 3), Y(b));
+        ctx.lineTo(X(x0 + off * 3 - ah * Math.cos(ang + 0.5)), Y(b - ah * Math.sin(ang + 0.5))); ctx.stroke();
+      }
+    };
+    arrows(-1, li, true, css('--f-adm'));
+    arrows(1, le, false, ph === 'Escape espontáneo' ? css('--f-blow') : css('--f-esc'));
+    // spark plug
+    ctx.fillStyle = edge; ctx.fillRect(X(-4), Y(headTop - 14), 8 * k, (-headTop + 12) * k);
+    ctx.fillStyle = metal2; ctx.fillRect(X(-6), Y(headTop - 24), 12 * k, 12 * k);
+    ctx.strokeStyle = edge; ctx.lineWidth = 2 * k; ctx.beginPath(); ctx.moveTo(X(0), Y(-2)); ctx.lineTo(X(0), Y(2)); ctx.stroke();
+    if (th >= R.ths - 1 && th <= R.ths + 6) {
+      ctx.strokeStyle = css('--spark'); ctx.lineWidth = 2;
+      for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, r1 = 3, r2 = 9 + (i % 2) * 4;
+        ctx.beginPath(); ctx.moveTo(X(r1 * Math.cos(a)), Y(4 + r1 * Math.sin(a))); ctx.lineTo(X(r2 * Math.cos(a)), Y(4 + r2 * Math.sin(a))); ctx.stroke(); }
+    }
+    // piston
+    ctx.fillStyle = metal; ctx.strokeStyle = edge; ctx.lineWidth = 1;
+    ctx.fillRect(X(-B / 2 + 0.6), Y(crown), (B - 1.2) * k, skirt * k); ctx.strokeRect(X(-B / 2 + 0.6), Y(crown), (B - 1.2) * k, skirt * k);
+    ctx.strokeStyle = edge;
+    for (const r of [5, 9, 13]) { ctx.beginPath(); ctx.moveTo(X(-B / 2 + 0.6), Y(crown + r)); ctx.lineTo(X(-B / 2 + 5), Y(crown + r));
+      ctx.moveTo(X(B / 2 - 5), Y(crown + r)); ctx.lineTo(X(B / 2 - 0.6), Y(crown + r)); ctx.stroke(); }
+    // connecting rod and crank
+    const cpx = Rk * Math.sin(phi), cpy = yc - Rk * Math.cos(phi);
+    ctx.fillStyle = withAlpha(css('--metal-2'), 0.55);
+    ctx.beginPath(); ctx.arc(X(0), Y(yc), (Rk + 16) * k, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = withAlpha(edge, 0.6); ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.arc(X(0), Y(yc), Rk * k, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = metal2; ctx.lineWidth = 13 * k;
+    ctx.beginPath(); ctx.moveTo(X(0), Y(pinY)); ctx.lineTo(X(cpx), Y(cpy)); ctx.stroke();
+    ctx.strokeStyle = edge; ctx.lineWidth = 1; ctx.stroke();
+    ctx.strokeStyle = edge; ctx.lineWidth = 18 * k; ctx.beginPath(); ctx.moveTo(X(0), Y(yc)); ctx.lineTo(X(cpx), Y(cpy)); ctx.stroke();
+    ctx.fillStyle = metal; ctx.strokeStyle = edge; ctx.lineWidth = 1;
+    for (const [cx, cy, r] of [[0, pinY, 7], [cpx, cpy, 9], [0, yc, 11]]) { ctx.beginPath(); ctx.arc(X(cx), Y(cy), r * k, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    // TDC / BDC marks
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.fillStyle = muted; ctx.textAlign = 'left';
+    ctx.font = '11px ui-monospace, Consolas, monospace';
+    for (const [yy, lab] of [[hc, 'PMS'], [hc + Smm, 'PMI']]) {
+      ctx.beginPath(); ctx.moveTo(X(B / 2 + wall + 2), Y(yy)); ctx.lineTo(X(B / 2 + wall + 26), Y(yy)); ctx.stroke();
+      ctx.fillText(lab, X(B / 2 + wall + 29), Y(yy) + 4);
+    }
+    ctx.setLineDash([]);
+    // readout
+    const lines = [`θ ${th >= 0 ? '+' : ''}${fmt(th, 0)}°`, `p ${fmt(q.p / 1e5, 2)} bar`,
+                   `válv. adm. ${fmt(li * LMAX, 1)} mm`, `válv. esc. ${fmt(le * LMAX, 1)} mm`];
+    if (ph === 'Combustión') lines.push(`quemado ${fmt(xbNow * 100, 0)} %`);
+    const y0 = h - 12 - lines.length * 16;
+    ctx.textAlign = 'left'; ctx.fillStyle = col; ctx.font = '600 16px system-ui, sans-serif';
+    ctx.fillText(ph, 10, y0 - 6);
+    ctx.fillStyle = txt; ctx.font = '12px ui-monospace, Consolas, monospace';
+    lines.forEach((l, i) => ctx.fillText(l, 10, y0 + 14 + i * 16));
+  }
+
+  // ---------- valve timing spiral ----------
+  let valveGeom = null;
+  function drawValve(cv, th) {
+    const { ctx, w, h } = setupCanvas(cv);
+    const cx = w / 2, cy = h / 2, Rm = Math.min(w, h) / 2 - (w < 345 ? 58 : 44),   // extra room for side labels on phones
+          r0 = Rm * 0.48, r1 = Rm;
+    const rOf = t => r0 + (r1 - r0) * (t + 360) / 720;
+    const pos = (t, r) => { const a = rad(((t % 360) + 360) % 360); return [cx + r * Math.sin(a), cy - r * Math.cos(a)]; };
+    valveGeom = { cx, cy, r0, r1, rOf };
+    const muted = css('--muted'), txt = css('--text');
+    // guides
+    ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx, cy - r1 - 14); ctx.lineTo(cx, cy + r1 + 14); ctx.moveTo(cx - r1 - 14, cy); ctx.lineTo(cx + r1 + 14, cy); ctx.stroke();
+    ctx.fillStyle = muted; ctx.font = '600 12px system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('PMS', cx, cy - r1 - 20); ctx.fillText('PMI', cx, cy + r1 + 28);
+    // phase-coloured spiral
+    ctx.lineCap = 'butt'; ctx.lineWidth = Math.max(8, Rm * 0.075);
+    for (let t = -360; t < 360; t += 2) {
+      ctx.strokeStyle = phaseColor(R.phaseAt(t + 1));
+      const [ax, ay] = pos(t, rOf(t)), [bx, by] = pos(t + 2.4, rOf(t + 2.4));
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    }
+    // events
+    const ev = [
+      [R.IVO + 720, `AAA ${S.aaa}°`], [R.IVC, `RCA ${S.rca}°`], [R.ths, `Encendido ${fmt(S.ign, 0)}°`],
+      [R.EVO, `AAE ${S.aae}°`], [R.EVC - 720, `RCE ${S.rce}°`],
+    ];
+    ctx.font = '11px ui-monospace, Consolas, monospace';
+    ev.forEach(([t, lab], i) => {
+      const r = rOf(t), outer = t > 0;
+      const [ax, ay] = pos(t, r - 9), [bx, by] = pos(t, r + 9);
+      ctx.strokeStyle = txt; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      const [lx, ly] = pos(t, outer ? r + 24 : r - 24);
+      ctx.fillStyle = t === R.ths ? css('--f-comb') : txt;
+      ctx.textAlign = lx < cx - 4 ? 'right' : lx > cx + 4 ? 'left' : 'center';
+      ctx.fillText(lab, lx, ly + 4);
+    });
+    // revolution labels
+    // current crank position
+    const r = rOf(th), [px, py] = pos(th, r);
+    ctx.strokeStyle = txt; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
+    ctx.fillStyle = phaseColor(R.phaseAt(th)); ctx.strokeStyle = css('--surface'); ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(px, py, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = css('--surface'); ctx.beginPath(); ctx.arc(cx, cy, r0 * 0.62, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = phaseColor(R.phaseAt(th)); ctx.font = '600 13px system-ui, sans-serif';
+    ctx.fillText(R.phaseAt(th), cx, cy - 2);
+    ctx.fillStyle = txt; ctx.font = '12px ui-monospace, Consolas, monospace';
+    ctx.fillText(`${th >= 0 ? '+' : ''}${fmt(th, 0)}°`, cx, cy + 15);
+  }
+
+  // ---------- UI ----------
+  const fmt = (v, d) => v.toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const ctlBox = document.getElementById('controls');
+  CONTROLS.forEach(c => {
+    if (c.sec) { const hh = document.createElement('h2'); hh.textContent = c.sec; ctlBox.appendChild(hh); return; }
+    const d = document.createElement('div'); d.className = 'ctl';
+    d.innerHTML = `<div class="row"><label for="c-${c.id}">${c.label}</label><output id="o-${c.id}"></output></div>
+      <input type="range" id="c-${c.id}" min="${c.min}" max="${c.max}" step="${c.step}" value="${c.val}">
+      ${c.hint ? `<div class="hint">${c.hint}</div>` : ''}`;
+    ctlBox.appendChild(d);
+    d.querySelector('input').addEventListener('input', e => { S[c.id] = parseFloat(e.target.value); recompute(); });
+  });
+  document.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () => {
+    Object.assign(S, PRESETS[b.dataset.preset]);
+    INPUTS.forEach(c => document.getElementById('c-' + c.id).value = S[c.id]);
+    recompute();
+  }));
+  function seg(id, key) {
+    document.querySelectorAll(`#${id} button`).forEach(b => b.addEventListener('click', () => {
+      document.querySelectorAll(`#${id} button`).forEach(x => x.classList.toggle('on', x === b));
+      view[key] = b.dataset.v; draw();
+    }));
+  }
+  seg('seg-pv', 'pv'); seg('seg-pt', 'pt');
+  document.getElementById('t-motor').addEventListener('change', e => { view.motor = e.target.checked; draw(); });
+  document.getElementById('t-otto').addEventListener('change', e => { view.otto = e.target.checked; draw(); });
+  const duo = document.getElementById('duo'), cardE = document.getElementById('card-engine'), cardV = document.getElementById('card-valve');
+  function layoutDuo() {
+    cardE.style.display = view.engine ? '' : 'none';
+    cardV.style.display = view.valve ? '' : 'none';
+    duo.style.display = view.engine || view.valve ? '' : 'none';
+    duo.classList.toggle('single', !(view.engine && view.valve));
+    if (!view.engine && view.playing) togglePlay();
+    draw();
+  }
+  document.getElementById('t-kpis').addEventListener('change', e => { document.getElementById('kpis').style.display = e.target.checked ? '' : 'none'; });
+  document.getElementById('t-engine').addEventListener('change', e => { view.engine = e.target.checked; layoutDuo(); });
+  document.getElementById('t-valve').addEventListener('change', e => { view.valve = e.target.checked; layoutDuo(); });
+  document.getElementById('phase-legend').innerHTML =
+    PHASES.map(([n, v]) => `<span style="--c: var(${v})">${n}</span>`).join('');
+
+  // animation
+  const bPlay = document.getElementById('b-play');
+  let lastT = null;
+  function togglePlay() {
+    view.playing = !view.playing;
+    bPlay.textContent = view.playing ? '⏸ Pausar' : '▶ Animar';
+    bPlay.classList.toggle('on', view.playing);
+    if (view.playing) { if (view.hover == null) view.hover = -360; lastT = null; requestAnimationFrame(step); }
+  }
+  function step(t) {
+    if (!view.playing) return;
+    if (lastT != null) {
+      let th = view.hover + view.speed * (t - lastT) / 1000;
+      if (th > 360) th -= 720;
+      view.hover = th;
+      draw();
+    }
+    lastT = t;
+    requestAnimationFrame(step);
+  }
+  bPlay.addEventListener('click', togglePlay);
+  document.querySelectorAll('#anim [data-speed]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#anim [data-speed]').forEach(x => x.classList.toggle('on', x === b));
+    view.speed = +b.dataset.speed;
+  }));
+
+  const cvPV = document.getElementById('cv-pv'), cvP = document.getElementById('cv-p'), cvV = document.getElementById('cv-v');
+  const cvE = document.getElementById('cv-engine'), cvVal = document.getElementById('cv-valve');
+  let R = null, mapPV = null, mapP = null, mapV = null;
+
+  function nearestByTheta(th) {
+    let best = R.pts[0];
+    for (const q of R.pts) if (Math.abs(q.th - th) < Math.abs(best.th - th)) best = q;
+    return best;
+  }
+
+  function recompute() {
+    INPUTS.forEach(c => document.getElementById('o-' + c.id).textContent = c.fmt(S[c.id]));
+    R = simulate();
+    draw();
+  }
+
+  function draw() {
+    const bar = v => v / 1e5, cc = v => v * 1e6;
+    const C = { fired: css('--c-fired'), motor: css('--c-motor'), otto: css('--c-otto'), vol: css('--c-vol') };
+
+    const kp = [
+      ['IMEP neta', fmt(bar(R.imepN), 2) + ' bar', `bruta ${fmt(bar(R.imepG), 2)} · PMEP ${fmt(bar(R.pmep), 2)} bar`],
+      ['Rend. indicado bruto', fmt(R.etaInd * 100, 1) + ' %', `neto ${fmt(R.etaNet * 100, 1)} % · Otto ideal ${fmt(R.etaOtto * 100, 1)} %`],
+      ['Calor a las paredes', fmt(R.wallFrac * 100, 1) + ' %', 'de la energía del combustible'],
+      ['Masa atrapada', fmt(R.mAir * 1e6, 0) + ' mg', `${fmt(R.fill * 100, 0)} % del volumen del PMI (por el RCA)`],
+      ['Presión máxima', fmt(bar(R.pmax), 1) + ' bar', `a ${R.thmax >= 0 ? '+' : ''}${fmt(R.thmax, 1)}° DPMS`],
+      ['MFB50', (R.mfb50 >= 0 ? '+' : '') + fmt(R.mfb50, 1) + '°', 'óptimo típico: +5° a +10°'],
+      ['Potencia indicada', fmt(R.powerW / 1000, 0) + ' kW', `${fmt(R.powerW / 735.5, 0)} CV a ${fmt(S.rpm, 0)} rpm`],
+      ['Torque indicado', fmt(R.torque, 0) + ' N·m', `${NCYL} cil. · ${fmt(cc(VD * NCYL) / 1000, 2)} L`],
+    ];
+    document.getElementById('kpis').innerHTML = kp.map(k =>
+      `<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="s">${k[2]}</div></div>`).join('');
+
+    const thNow = view.hover != null ? view.hover : R.thmax;
+    const hq = view.hover != null ? nearestByTheta(view.hover) : null;
+    const qNow = hq || nearestByTheta(R.thmax);
+
+    // p-V
+    const pvPts = R.pts.map(q => ({ x: cc(q.V), y: bar(q.p) }));
+    const motorPts = R.pts.map(q => ({ x: cc(q.V), y: bar(q.pm) }));
+    const ottoPts = [];
+    for (let th = -180; th <= 180; th += 1) { if (th === 1) ottoPts.push({ x: cc(R.Vc), y: bar(R.p3) }); ottoPts.push({ x: cc(vol(th, R.Vc)), y: bar(R.ottoAt(th)) }); }
+    ottoPts.push({ x: cc(R.Vbdc), y: bar(R.pin) });
+    let pvx = [0, cc(R.Vbdc) * 1.04], pvy = [0, Math.max(bar(R.pmax), view.otto ? bar(R.p3) : 0) * 1.08], xLog = false, yLog = false;
+    if (view.pv === 'log') { pvx = [cc(R.Vc) * 0.85, cc(R.Vbdc) * 1.15]; pvy = [Math.min(bar(R.pin), 0.9) * 0.7, pvy[1] * 1.3]; xLog = yLog = true; }
+    if (view.pv === 'bombeo') { pvy = [0, Math.max(3, bar(R.pin) * 1.6)]; }
+    const pvSeries = [];
+    if (view.otto) pvSeries.push({ pts: ottoPts, color: C.otto, width: 1.5, dash: [6, 4] });
+    if (view.motor) pvSeries.push({ pts: motorPts, color: C.motor, width: 1.5, dash: [3, 4] });
+    pvSeries.push({ pts: pvPts, color: C.fired, width: 2.4 });
+    mapPV = plot(cvPV, { x: pvx, y: pvy, xLog, yLog, series: pvSeries, xLabel: 'Volumen del cilindro [cm³]', yLabel: 'Presión [bar]',
+      yFmt: v => fmt(v, v < 10 && v % 1 ? 1 : 0), xFmt: v => fmt(v, 0),
+      dots: hq ? [{ x: cc(hq.V), y: bar(hq.p), color: phaseColor(hq.ph) }] : [] });
+
+    // p-θ and V-θ
+    let tx = [-360, 360], py = [0, Math.max(bar(R.pmax), view.otto ? bar(R.p3) : 0) * 1.08];
+    if (view.pt === 'zoom') tx = [-60, 100];
+    if (view.pt === 'bombeo') py = [0, Math.max(3, bar(R.pin) * 1.6)];
+    const bands = [
+      { from: -360, to: -180, label: 'Admisión', color: css('--ph-adm') },
+      { from: -180, to: 0, label: 'Compresión', color: css('--ph-comp') },
+      { from: 0, to: 180, label: 'Expansión', color: css('--ph-exp') },
+      { from: 180, to: 360, label: 'Escape', color: css('--ph-esc') },
+    ];
+    const ptSeries = [];
+    if (view.otto) { const op = []; for (let th = -180; th <= 180; th += 1) op.push({ x: th, y: R.ottoAt(th) != null ? bar(R.ottoAt(th)) : null }); ptSeries.push({ pts: op, color: C.otto, width: 1.5, dash: [6, 4] }); }
+    if (view.motor) ptSeries.push({ pts: R.pts.map(q => ({ x: q.th, y: bar(q.pm) })), color: C.motor, width: 1.5, dash: [3, 4] });
+    ptSeries.push({ pts: R.pts.map(q => ({ x: q.th, y: bar(q.p) })), color: C.fired, width: 2.4 });
+    const xTicks = view.pt === 'zoom' ? niceTicks(tx[0], tx[1], 8) : [-360, -270, -180, -90, 0, 90, 180, 270, 360];
+    const vl = [{ x: R.ths, color: css('--f-comb') }];
+    if (hq) vl.push({ x: hq.th, color: css('--axis') });
+    mapP = plot(cvP, { x: tx, y: py, xTicks, series: ptSeries, bands, yLabel: 'Presión [bar]', vlines: vl,
+      dots: hq ? [{ x: hq.th, y: bar(hq.p), color: phaseColor(hq.ph) }] : [], yFmt: v => fmt(v, v < 10 && v % 1 ? 1 : 0) });
+    mapV = plot(cvV, { x: tx, y: [0, cc(R.Vbdc) * 1.08], xTicks, yN: 3, bands,
+      series: [{ pts: R.pts.map(q => ({ x: q.th, y: cc(q.V) })), color: C.vol, width: 2 }],
+      xLabel: 'Ángulo de cigüeñal [°]  (0° = PMS de combustión)', yLabel: 'V [cm³]', xFmt: v => v + '°',
+      vlines: hq ? [{ x: hq.th, color: css('--axis') }] : [], dots: hq ? [{ x: hq.th, y: cc(hq.V), color: C.vol }] : [] });
+
+    if (view.engine) drawEngine(cvE, thNow, qNow);
+    if (view.valve) drawValve(cvVal, thNow);
+
+    const q = qNow;
+    document.getElementById('hud').innerHTML =
+      `<span>θ <b>${q.th >= 0 ? '+' : ''}${fmt(q.th, 1)}°</b></span><span>p <b>${fmt(bar(q.p), 2)} bar</b></span>` +
+      `<span>V <b>${fmt(cc(q.V), 1)} cm³</b></span><span>Fase <b style="color:${phaseColor(q.ph)}">${q.ph}</b></span>` +
+      (q.ph === 'Combustión' ? `<span>Fracción quemada <b>${fmt(q.xb * 100, 0)} %</b></span>` : '') +
+      (hq ? '' : '<span style="opacity:.7">Pasá el mouse (o tocá) los gráficos, o usá ▶ Animar</span>');
+  }
+
+  // hover: θ charts by x; p-V by nearest point; spiral by angle and radius
+  const setHover = th => { if (view.playing) return; view.hover = th; draw(); };
+  function hoverTheta(map) { return e => { const r = e.currentTarget.getBoundingClientRect(); const X = e.clientX - r.left;
+    if (X < map().X0 || X > map().X1) return; setHover(map().invX(X)); }; }
+  const onPointer = (cv, fn) => ['pointermove', 'pointerdown'].forEach(t => cv.addEventListener(t, fn));
+  onPointer(cvP, hoverTheta(() => mapP));
+  onPointer(cvV, hoverTheta(() => mapV));
+  onPointer(cvPV, e => {
+    const r = cvPV.getBoundingClientRect(), X = e.clientX - r.left, Y = e.clientY - r.top;
+    let best = null, bd = 1e9;
+    for (const q of R.pts) { const dx = mapPV.sx(q.V * 1e6) - X, dy = mapPV.sy(q.p / 1e5) - Y, d = dx * dx + dy * dy;
+      if (isFinite(d) && d < bd) { bd = d; best = q; } }
+    if (best && bd < 2500) setHover(best.th);
+  });
+  onPointer(cvVal, e => {
+    if (!valveGeom) return;
+    const r = cvVal.getBoundingClientRect(), dx = e.clientX - r.left - valveGeom.cx, dy = e.clientY - r.top - valveGeom.cy;
+    const rr = Math.hypot(dx, dy); if (rr < valveGeom.r0 * 0.6 || rr > valveGeom.r1 + 20) return;
+    const ang = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+    const inner = ang - 360, outer = ang;              // two candidate angles, one per revolution
+    setHover(Math.abs(valveGeom.rOf(inner) - rr) < Math.abs(valveGeom.rOf(outer) - rr) ? inner : outer);
+  });
+  [cvP, cvV, cvPV, cvVal].forEach(c => c.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && !view.playing) { view.hover = null; draw(); } }));
+  window.addEventListener('resize', draw);
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', draw);
+  const hashTh = location.hash.match(/theta=(-?\d+)/);   // e.g. #theta=-270 opens at that angle
+  if (hashTh) view.hover = +hashTh[1];
+  recompute();
+})();
+</script>
+</body>
+</html>
