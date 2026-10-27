@@ -88,6 +88,7 @@
   details summary { cursor: pointer; font-weight: 600; }
   details .body { color: var(--muted); margin-top: 8px; }
   details code { font: 12.5px ui-monospace, Consolas, monospace; color: var(--text); }
+  .foot { margin-top: 16px; font-size: 12px; color: var(--muted); }
   /* mobile: charts first, then parameters, then engine; canvases let the page scroll vertically */
   @media (max-width: 900px) {
     .charts { order: 1; } .panel { order: 2; } .side { order: 3; }
@@ -120,7 +121,6 @@
 <div class="wrap">
   <header>
     <h1>Ciclo Otto: diagramas p-V y p-θ</h1>
-    <p>Versión 1.2 · Modelo termodinámico de una zona con Wiebe, Woschni y distribución de válvulas. Motores de Combustión Interna para la Alta Competencia: Temas 1, 3, 4, 5 y 7.</p>
   </header>
 
   <div class="toolbar">
@@ -220,16 +220,19 @@
       <p><b>Escape espontáneo:</b> desde la apertura de escape, la presión cae exponencialmente hacia p<sub>esc</sub> = 1,05 bar, con un 98 % de la caída en ≈ 3 ms. Como es un tiempo, a más rpm ocupa más grados de cigüeñal: si el escape abre tarde a alto régimen, el pistón empuja contra gases a presión y aumenta el trabajo de bombeo, y por eso el AAE óptimo crece con las rpm. <b>Cruce de válvulas:</b> la presión pasa linealmente de p<sub>esc</sub> a la presión de admisión.</p>
       <p><b>Otto ideal:</b> compresión y expansión isentrópicas desde el PMI, con el mismo γ, y aporte de calor a volumen constante en el PMS con el mismo calor (sin pérdidas). Rendimiento <code>η = 1 − r<sub>c</sub><sup>1−γ</sup></code>.</p>
       <p><b>Simplificaciones:</b> γ constante, sin efectos dinámicos en admisión y escape (por eso un árbol de levas cruzado solo pierde llenado), sin gases residuales ni fricción: todos los valores son indicados, no al freno. Sirve para ver tendencias, no para predecir valores de un motor real.</p>
-      <p><b>Geometría fija:</b> 4 cilindros de 86 × 86 mm (≈ 2,0 L), λ = 0,30.</p>
+      <p><b>Geometría:</b> diámetro, carrera y número de cilindros se ajustan en el panel (por defecto, 4 cilindros de 86 × 86 mm, ≈ 2,0 L). λ = R/L = 0,30 fijo. La carrera cambia la velocidad media del pistón y, con ella, la transferencia de calor de Woschni.</p>
+      <p><b>Eventos arrastrables:</b> en el gráfico p-θ y en el diagrama de distribución se pueden arrastrar las marcas de AAA, RCA, AAE, RCE y encendido; los controles del panel se actualizan solos.</p>
     </div>
   </details>
+  <footer class="foot">Versión 1.2 · Modelo termodinámico de una zona con Wiebe, Woschni y distribución de válvulas. Motores de Combustión Interna para la Alta Competencia: Temas 1, 3, 4, 5 y 7.</footer>
 </div>
 
 <script>
 (() => {
-  // Engine geometry (fixed)
-  const BORE = 0.086, STROKE = 0.086, LAMBDA = 0.30, NCYL = 4;
-  const VD = Math.PI / 4 * BORE * BORE * STROKE;   // m³ per cylinder
+  // Engine geometry (bore, stroke and cylinders come from the controls; see setGeom)
+  const LAMBDA = 0.30;
+  let BORE = 0.086, STROKE = 0.086, NCYL = 4, VD = Math.PI / 4 * BORE * BORE * STROKE;   // VD: m³ per cylinder
+  const litres = () => Math.PI / 4 * S.bore * S.bore * S.stroke * S.ncyl / 1e6;
   const R_AIR = 287, T_IN = 320, T_WALL = 450, LHV = 44e6, AFR_ST = 14.7, P_EXH = 1.05e5, WIEBE_A = 5, BLOWDOWN_MS = 3;
 
   const CONTROLS = [
@@ -251,6 +254,11 @@
     { id: 'rca', label: 'RCA: retraso cierre admisión', min: 0, max: 80, step: 1, val: 40, fmt: v => v.toFixed(0) + '° DPMI' },
     { id: 'aae', label: 'AAE: adelanto apertura escape', min: 0, max: 80, step: 1, val: 45, fmt: v => v.toFixed(0) + '° APMI' },
     { id: 'rce', label: 'RCE: retraso cierre escape', min: 0, max: 45, step: 1, val: 12, fmt: v => v.toFixed(0) + '° DPMS' },
+    { sec: 'Geometría (cilindrada)' },
+    { id: 'bore',   label: 'Diámetro D', min: 60, max: 110, step: 0.5, val: 86, fmt: v => v.toFixed(1) + ' mm' },
+    { id: 'stroke', label: 'Carrera S', min: 40, max: 110, step: 0.5, val: 86,
+      fmt: v => v.toFixed(1) + ' mm · D/S ' + (S.bore / v).toFixed(2), hint: 'D/S > 1: supercuadrado (más rpm) · < 1: carrera larga' },
+    { id: 'ncyl',   label: 'Cilindros', min: 1, max: 12, step: 1, val: 4, fmt: v => v.toFixed(0) + ' → ' + fmt(litres(), 2) + ' L' },
   ];
   const INPUTS = CONTROLS.filter(c => c.id);
   const PRESETS = {
@@ -266,6 +274,15 @@
   ];
 
   const S = {}; INPUTS.forEach(c => S[c.id] = c.val);
+  // Valve events and ignition as crank angles in [-360, 360] (0 = firing TDC), with their inverse to the control value
+  const EVENTS = [
+    { id: 'aaa', lab: 'AAA', th: () => 360 - S.aaa,  inv: x => 360 - x, col: '--f-adm' },
+    { id: 'rca', lab: 'RCA', th: () => -180 + S.rca, inv: x => x + 180, col: '--f-adm' },
+    { id: 'ign', lab: 'Enc.', th: () => -S.ign,      inv: x => -x,      col: '--f-comb' },
+    { id: 'aae', lab: 'AAE', th: () => 180 - S.aae,  inv: x => 180 - x, col: '--f-esc' },
+    { id: 'rce', lab: 'RCE', th: () => -360 + S.rce, inv: x => x + 360, col: '--f-esc' },
+  ];
+  let drag = null;   // { ev, cv } while an event mark is being dragged
   const view = { pv: 'lin', pt: 'full', motor: true, otto: true, engine: true, valve: true,
                  hover: null, playing: false, speed: 200 };
 
@@ -296,6 +313,7 @@
   }
 
   function simulate() {
+    BORE = S.bore / 1000; STROKE = S.stroke / 1000; NCYL = S.ncyl; VD = Math.PI / 4 * BORE * BORE * STROKE;
     const rc = S.rc, g = S.gamma, pin = S.pin * 1e5;
     const Vc = VD / (rc - 1), Vbdc = Vc + VD;
     // valve events in cycle angle (0 = firing TDC)
@@ -467,6 +485,17 @@
     ctx.setLineDash([]);
     (o.vlines || []).forEach(v => { const X = sx(v.x); ctx.strokeStyle = v.color; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(X, Y1); ctx.lineTo(X, Y0); ctx.stroke(); ctx.setLineDash([]); });
+    // draggable event marks: line plus a label pill at the bottom (shows the value while active)
+    (o.markers || []).forEach(m => {
+      const X = sx(m.x); if (X < X0 - 1 || X > X1 + 1) return;
+      ctx.strokeStyle = m.color; ctx.lineWidth = m.active ? 2.2 : 1.3; ctx.setLineDash(m.active ? [] : [5, 3]);
+      ctx.beginPath(); ctx.moveTo(X, Y1); ctx.lineTo(X, Y0); ctx.stroke(); ctx.setLineDash([]);
+      ctx.font = `600 ${m.active ? 12 : 10.5}px system-ui, sans-serif`;
+      const tw = ctx.measureText(m.label).width + 10, th = m.active ? 18 : 15;
+      const bx = Math.min(Math.max(X - tw / 2, X0 + 1), X1 - tw - 1), by = Y0 - th - 4;
+      ctx.fillStyle = m.color; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, tw, th, 4) : ctx.rect(bx, by, tw, th); ctx.fill();
+      ctx.fillStyle = css('--surface'); ctx.textAlign = 'center'; ctx.fillText(m.label, bx + tw / 2, by + th - (m.active ? 5 : 4));
+    });
     (o.dots || []).forEach(d => { ctx.fillStyle = d.color; ctx.beginPath(); ctx.arc(sx(d.x), sy(d.y), 4.5, 0, 2 * Math.PI); ctx.fill();
       ctx.strokeStyle = css('--surface'); ctx.lineWidth = 1.5; ctx.stroke(); });
     ctx.restore();
@@ -632,18 +661,19 @@
       const [ax, ay] = pos(t, rOf(t)), [bx, by] = pos(t + 2.4, rOf(t + 2.4));
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
     }
-    // events
-    const ev = [
-      [R.IVO + 720, `AAA ${S.aaa}°`], [R.IVC, `RCA ${S.rca}°`], [R.ths, `Encendido ${fmt(S.ign, 0)}°`],
-      [R.EVO, `AAE ${S.aae}°`], [R.EVC - 720, `RCE ${S.rce}°`],
-    ];
-    ctx.font = '11px ui-monospace, Consolas, monospace';
-    ev.forEach(([t, lab], i) => {
-      const r = rOf(t), outer = t > 0;
-      const [ax, ay] = pos(t, r - 9), [bx, by] = pos(t, r + 9);
-      ctx.strokeStyle = txt; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    // events (draggable: a handle on the spiral marks each one)
+    valveGeom.handles = [];
+    EVENTS.forEach(e => {
+      const t = e.th(), r = rOf(t), outer = t > 0, active = drag && drag.ev === e;
+      const lab = (e.id === 'ign' ? 'Encendido' : e.lab) + ' ' + fmt(S[e.id], 0) + '°';
+      const [ax, ay] = pos(t, r - 9), [bx, by] = pos(t, r + 9), [hx, hy] = pos(t, r);
+      ctx.strokeStyle = txt; ctx.lineWidth = active ? 2.4 : 1.6; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.fillStyle = css(e.col); ctx.strokeStyle = css('--surface'); ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(hx, hy, active ? 6.5 : 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      valveGeom.handles.push({ ev: e, x: hx, y: hy });
       const [lx, ly] = pos(t, outer ? r + 24 : r - 24);
-      ctx.fillStyle = t === R.ths ? css('--f-comb') : txt;
+      ctx.font = active ? '600 13px ui-monospace, Consolas, monospace' : '11px ui-monospace, Consolas, monospace';
+      ctx.fillStyle = e.id === 'ign' ? css('--f-comb') : txt;
       ctx.textAlign = lx < cx - 4 ? 'right' : lx > cx + 4 ? 'left' : 'center';
       ctx.fillText(lab, lx, ly + 4);
     });
@@ -797,9 +827,12 @@
     if (view.motor) ptSeries.push({ pts: R.pts.map(q => ({ x: q.th, y: bar(q.pm) })), color: C.motor, width: 1.5, dash: [3, 4] });
     ptSeries.push({ pts: R.pts.map(q => ({ x: q.th, y: bar(q.p) })), color: C.fired, width: 2.4 });
     const xTicks = view.pt === 'zoom' ? niceTicks(tx[0], tx[1], 8) : [-360, -270, -180, -90, 0, 90, 180, 270, 360];
-    const vl = [{ x: R.ths, color: css('--f-comb') }];
-    if (hq) vl.push({ x: hq.th, color: css('--axis') });
-    mapP = plot(cvP, { x: tx, y: py, xTicks, series: ptSeries, bands, yLabel: 'Presión [bar]', vlines: vl,
+    const vl = hq ? [{ x: hq.th, color: css('--axis') }] : [];
+    const markers = EVENTS.map(e => {
+      const active = drag && drag.ev === e, c = INPUTS.find(i => i.id === e.id);
+      return { x: e.th(), color: css(e.col), active, label: active ? `${e.lab} ${c.fmt(S[e.id])}` : e.lab };
+    });
+    mapP = plot(cvP, { x: tx, y: py, xTicks, series: ptSeries, bands, yLabel: 'Presión [bar]', vlines: vl, markers,
       dots: hq ? [{ x: hq.th, y: bar(hq.p), color: phaseColor(hq.ph) }] : [], yFmt: v => fmt(v, v < 10 && v % 1 ? 1 : 0) });
     mapV = plot(cvV, { x: tx, y: [0, cc(R.Vbdc) * 1.08], xTicks, yN: 3, bands,
       series: [{ pts: R.pts.map(q => ({ x: q.th, y: cc(q.V) })), color: C.vol, width: 2 }],
@@ -818,7 +851,50 @@
   }
 
   // hover: θ charts by x; p-V by nearest point; spiral by angle and radius
-  const setHover = th => { if (view.playing) return; view.hover = th; draw(); };
+  const setHover = th => { if (view.playing || drag) return; view.hover = th; draw(); };
+
+  // dragging event marks (p-θ chart and valve spiral) writes back to the controls
+  function setEvent(e, x) {
+    const c = INPUTS.find(i => i.id === e.id);
+    const v = Math.min(c.max, Math.max(c.min, Math.round(e.inv(x) / c.step) * c.step));
+    if (v === S[e.id]) return;
+    S[e.id] = v; document.getElementById('c-' + e.id).value = v; recompute();
+  }
+  const local = (cv, e) => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  function hitP(X, tol) {
+    if (!mapP) return null;
+    let best = null, bd = tol;
+    EVENTS.forEach(e => { const xs = mapP.sx(e.th()), d = Math.abs(xs - X);
+      if (xs >= mapP.X0 - 1 && xs <= mapP.X1 + 1 && d < bd) { bd = d; best = e; } });
+    return best;
+  }
+  function hitV(X, Y, tol) {
+    if (!valveGeom || !valveGeom.handles) return null;
+    let best = null, bd = tol;
+    valveGeom.handles.forEach(h => { const d = Math.hypot(h.x - X, h.y - Y); if (d < bd) { bd = d; best = h.ev; } });
+    return best;
+  }
+  const hitAt = (cv, X, Y, touch) => cv === cvP ? hitP(X, touch ? 16 : 7) : hitV(X, Y, touch ? 22 : 12);
+  // angle on the spiral, picking the revolution closest to the event's current angle
+  function spiralTheta(e, X, Y) {
+    const ang = (Math.atan2(X - valveGeom.cx, -(Y - valveGeom.cy)) * 180 / Math.PI + 360) % 360, cur = e.th();
+    return [ang - 720, ang - 360, ang, ang + 360].reduce((a, b) => Math.abs(b - cur) < Math.abs(a - cur) ? b : a);
+  }
+  [cvP, cvVal].forEach(cv => {
+    cv.addEventListener('pointerdown', e => {
+      const [X, Y] = local(cv, e), ev = hitAt(cv, X, Y, e.pointerType === 'touch');
+      if (!ev) return;
+      drag = { ev, cv }; cv.setPointerCapture(e.pointerId); e.preventDefault(); draw();
+    });
+    cv.addEventListener('pointermove', e => {
+      const [X, Y] = local(cv, e);
+      if (drag && drag.cv === cv) { setEvent(drag.ev, cv === cvP ? mapP.invX(X) : spiralTheta(drag.ev, X, Y)); return; }
+      if (e.pointerType !== 'touch') cv.style.cursor = hitAt(cv, X, Y, false) ? (cv === cvP ? 'ew-resize' : 'grab') : '';
+    });
+    ['pointerup', 'pointercancel'].forEach(t => cv.addEventListener(t, () => { if (drag && drag.cv === cv) { drag = null; draw(); } }));
+    // on phones, keep the page from scrolling only when the touch starts on a mark
+    cv.addEventListener('touchstart', e => { const [X, Y] = local(cv, e.touches[0]); if (hitAt(cv, X, Y, true)) e.preventDefault(); }, { passive: false });
+  });
   function hoverTheta(map) { return e => { const r = e.currentTarget.getBoundingClientRect(); const X = e.clientX - r.left;
     if (X < map().X0 || X > map().X1) return; setHover(map().invX(X)); }; }
   const onPointer = (cv, fn) => ['pointermove', 'pointerdown'].forEach(t => cv.addEventListener(t, fn));
